@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head> <link rel="manifest" href="manifest.json">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Budget Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body { background: #0b0e14; color: #fff; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .glass { background: rgba(23, 28, 41, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; }
+        .kpi-card { background: rgba(30, 41, 59, 0.4); border-radius: 12px; padding: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.03); }
+        .kpi-val { font-size: 1.1rem; font-weight: 900; color: #fff; margin-top: 4px; }
+        .kpi-label { font-size: 0.65rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        canvas { max-height: 160px !important; width: 100% !important; }
+        input { background: #0f172a !important; color: white !important; border: 1px solid #1e293b !important; outline: none; }
+        .active-tab { background: #3b82f6 !important; font-weight: bold; }
+        ::-webkit-scrollbar { display: none; }
+
+        /* Premium Modal Styles */
+        #catModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; backdrop-filter: blur(10px); align-items: flex-end; }
+        .modal-content { background: #161b26; width: 100%; border-top-left-radius: 30px; border-top-right-radius: 30px; padding: 24px; max-height: 80vh; overflow-y: auto; animation: slideUp 0.3s ease-out; border-top: 1px solid rgba(255,255,255,0.1); }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+        .cat-item-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 16px; border-radius: 16px; text-align: left; position: relative; transition: 0.2s; }
+        .cat-item-btn:active { background: #3b82f6; transform: scale(0.95); }
+        .cat-item-text { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+        .del-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; width: 22px; height: 22px; border-radius: 50%; display: none; items-center; justify-content: center; font-size: 12px; border: 2px solid #161b26; }
+    </style>
+</head>
+<body class="p-4 pb-12">
+
+    <div id="report-area" class="max-w-4xl mx-auto space-y-6">
+        
+        <header class="flex justify-between items-center px-2">
+            <div>
+                <h1 class="text-lg font-black tracking-tight">Personal Budget <span class="text-blue-500">Vol.1</span></h1>
+                <p class="text-[10px] text-gray-500">Personal Finance — Tracker</p>
+            </div>
+            <div class="flex gap-2 no-print">
+                <button onclick="savePDF()" class="bg-slate-800 p-2 px-4 rounded-lg text-[10px] font-bold uppercase border border-white/10">Reports</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="kpi-card"><p class="kpi-label">Total Earnings</p><p id="kpi-income" class="kpi-val">₱0</p></div>
+            <div class="kpi-card"><p class="kpi-label">Total Expenses</p><p id="kpi-expense" class="kpi-val">₱0</p></div>
+            <div class="kpi-card"><p class="kpi-label">Net Savings</p><p id="kpi-savings" class="kpi-val text-blue-400">₱0</p></div>
+            <div class="kpi-card"><p class="kpi-label">Current Balance</p><p id="kpi-balance" class="kpi-val text-green-400">₱0</p></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="glass p-5 text-center"><p class="kpi-label mb-4">Expense Allocation</p><canvas id="chartD"></canvas></div>
+            <div class="glass p-5 text-center"><p class="kpi-label mb-4">Per-Category Value</p><canvas id="chartB"></canvas></div>
+            <div class="glass p-5 text-center"><p class="kpi-label mb-4">Revenue Trend</p><canvas id="chartL"></canvas></div>
+        </div>
+
+        <div class="glass p-6 space-y-4 no-print">
+            <div class="flex gap-2 p-1 bg-black/40 rounded-xl">
+                <button id="m-inc" onclick="setMode('inc')" class="flex-1 py-2 text-[10px] font-bold rounded-lg active-tab">INCOME</button>
+                <button id="m-exp" onclick="setMode('exp')" class="flex-1 py-2 text-[10px] font-bold rounded-lg">EXPENSE</button>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <input type="date" id="tDate" class="p-4 rounded-xl text-xs">
+                <input type="number" id="tAmt" placeholder="Amount ₱" class="p-4 rounded-xl text-xs font-bold">
+            </div>
+            
+            <button onclick="openModal()" class="w-full bg-slate-900/80 p-4 rounded-xl text-xs text-left flex justify-between items-center border border-white/5">
+                <span id="catLabel" class="text-gray-400 font-bold uppercase">Select Category</span>
+                <span class="text-blue-500 text-lg">▾</span>
+            </button>
+
+            <button onclick="commit()" class="w-full bg-blue-600 py-4 rounded-xl font-black text-xs uppercase tracking-widest">Execute Transaction</button>
+        </div>
+
+        <div class="px-2">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="kpi-label">Recent Transactions</h3>
+                <button onclick="wipe()" class="text-[8px] text-red-900 font-bold uppercase no-print">Clear All</button>
+            </div>
+            <div id="logList" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <div id="catModal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-2">
+                <h2 id="modalTitle" class="text-sm font-black text-blue-500 uppercase tracking-widest">Categories</h2>
+                <div class="flex gap-4 items-center">
+                    <button id="editToggle" onclick="toggleEdit()" class="text-[10px] font-bold text-gray-500 uppercase">Edit</button>
+                    <button onclick="closeModal()" class="text-2xl text-gray-500">&times;</button>
+                </div>
+            </div>
+            <div id="catGrid" class="cat-grid"></div>
+            <button onclick="addCat()" class="w-full mt-6 py-4 rounded-xl border border-dashed border-gray-700 text-[10px] font-bold uppercase text-gray-500">+ Add New Category</button>
+        </div>
+    </div>
+
+    <script>
+        let db = JSON.parse(localStorage.getItem('bp_exec_final_v1')) || { 
+            inc: [], exp: [], 
+            cats: {
+                inc: ["Weekly Payout (USD)", "Bonus", "Other"],
+                exp: ["Rent Share", "Wifi Bill", "Electricity", "Water Bill", "Mama Allowance", "Mama Maintenance", "School Related", "Relationship", "Savings"]
+            }
+        };
+        let mode = 'inc', charts = {}, editMode = false, selectedCat = null;
+
+        function setMode(m) {
+            mode = m;
+            document.getElementById('m-inc').classList.toggle('active-tab', m === 'inc');
+            document.getElementById('m-exp').classList.toggle('active-tab', m === 'exp');
+            document.getElementById('catLabel').innerText = "Select Category";
+            document.getElementById('catLabel').style.color = "#9ca3af";
+            selectedCat = null;
+        }
+
+        function openModal() {
+            editMode = false;
+            document.getElementById('editToggle').innerText = "Edit";
+            renderModal();
+            document.getElementById('catModal').style.display = 'flex';
+        }
+
+        function closeModal() { document.getElementById('catModal').style.display = 'none'; }
+
+        function toggleEdit() {
+            editMode = !editMode;
+            document.getElementById('editToggle').innerText = editMode ? "Done" : "Edit";
+            renderModal();
+        }
+
+        function renderModal() {
+            const grid = document.getElementById('catGrid');
+            grid.innerHTML = '';
+            document.getElementById('modalTitle').innerText = mode === 'inc' ? 'Income Sources' : 'Expense Types';
+            
+            db.cats[mode].forEach((c, i) => {
+                grid.innerHTML += `
+                    <div class="cat-item-btn" onclick="${editMode ? '' : `selectCat('${c}')`}">
+                        <span class="cat-item-text">${c}</span>
+                        <div class="del-badge" style="display: ${editMode ? 'flex' : 'none'}" onclick="event.stopPropagation(); deleteCat(${i})">✕</div>
+                    </div>`;
+            });
+        }
+
+        function selectCat(c) {
+            selectedCat = c;
+            document.getElementById('catLabel').innerText = c;
+            document.getElementById('catLabel').style.color = "#fff";
+            closeModal();
+        }
+
+        function deleteCat(i) {
+            if(confirm("Delete this category?")) {
+                db.cats[mode].splice(i, 1);
+                localStorage.setItem('bp_exec_final_v1', JSON.stringify(db));
+                renderModal();
+            }
+        }
+
+        function addCat() {
+            const name = prompt("New Category:");
+            if (name && !db.cats[mode].includes(name)) {
+                db.cats[mode].push(name);
+                localStorage.setItem('bp_exec_final_v1', JSON.stringify(db));
+                renderModal();
+            }
+        }
+
+        function commit() {
+            const amt = parseFloat(document.getElementById('tAmt').value);
+            const date = document.getElementById('tDate').value;
+            if(!amt || !date || !selectedCat) return alert("Fill Amount, Date, and Category");
+            db[mode].push({ id: Date.now(), d: date, c: selectedCat, a: amt });
+            localStorage.setItem('bp_exec_final_v1', JSON.stringify(db));
+            refresh();
+            document.getElementById('tAmt').value = '';
+        }
+
+        function refresh() {
+            const inT = db.inc.reduce((s, x) => s + x.a, 0);
+            const exT = db.exp.reduce((s, x) => s + x.a, 0);
+            const savingsT = db.exp.filter(x => x.c.includes("Savings")).reduce((s, x) => s + x.a, 0);
+            
+            document.getElementById('kpi-income').innerText = `₱${inT.toLocaleString()}`;
+            document.getElementById('kpi-expense').innerText = `₱${exT.toLocaleString()}`;
+            document.getElementById('kpi-savings').innerText = `₱${savingsT.toLocaleString()}`;
+            document.getElementById('kpi-balance').innerText = `₱${(inT - exT).toLocaleString()}`;
+
+            const list = document.getElementById('logList'); list.innerHTML = '';
+            const all = [...db.inc.map(x=>({...x, t:'inc'})), ...db.exp.map(x=>({...x, t:'exp'}))].sort((a,b)=>new Date(b.d)-new Date(a.d)).slice(0,5);
+            all.forEach(x => {
+                list.innerHTML += `<div class="glass p-4 flex justify-between items-center bg-white/5">
+                    <div><p class="text-[9px] font-bold text-blue-500 uppercase">${x.c}</p><p class="text-[8px] text-gray-500">${x.d}</p></div>
+                    <div class="text-right"><p class="text-xs font-bold ${x.t==='inc'?'text-green-400':'text-red-400'}">₱${x.a.toLocaleString()}</p>
+                    <button onclick="del(${x.id},'${x.t}')" class="text-[8px] text-gray-700 no-print">DEL</button></div>
+                </div>`;
+            });
+            updateCharts();
+        }
+
+        function updateCharts() {
+            Object.values(charts).forEach(c => c?.destroy());
+            const expMap = {}; db.exp.forEach(x => expMap[x.c] = (expMap[x.c] || 0) + x.a);
+            charts.d = new Chart(document.getElementById('chartD'), {
+                type: 'doughnut', data: { labels: Object.keys(expMap), datasets: [{ data: Object.values(expMap), backgroundColor: ['#3b82f6','#8b5cf6','#ef4444','#10b981','#f59e0b'], borderWidth: 0 }] },
+                options: { cutout: '80%', plugins: { legend: { display: false } } }
+            });
+            charts.b = new Chart(document.getElementById('chartB'), {
+                type: 'bar', data: { labels: Object.keys(expMap), datasets: [{ data: Object.values(expMap), backgroundColor: '#3b82f6', borderRadius: 4 }] },
+                options: { plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { ticks: { color: '#475569', font: { size: 8 } } } } }
+            });
+            let cum = 0; const trend = [...db.inc].sort((a,b)=>new Date(a.d)-new Date(b.d));
+            charts.l = new Chart(document.getElementById('chartL'), {
+                type: 'line', data: { labels: trend.slice(-7).map(x=>x.d.split('-')[2]), datasets: [{ data: trend.slice(-7).map(x=>{cum+=x.a; return cum;}), borderColor: '#10b981', tension: 0.4, fill: true, backgroundColor: 'rgba(16, 185, 129, 0.1)' }] },
+                options: { plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { ticks: { color: '#475569', font: { size: 8 } } } } }
+            });
+        }
+
+        function del(id, t) { db[t] = db[t].filter(x => x.id !== id); localStorage.setItem('bp_exec_final_v1', JSON.stringify(db)); refresh(); }
+        function wipe() { if(confirm("Wipe all data?")) { db.inc=[]; db.exp=[]; localStorage.setItem('bp_exec_final_v1', JSON.stringify(db)); refresh(); } }
+        function savePDF() { html2pdf().from(document.getElementById('report-area')).set({ margin: 5, filename: 'Exec_Report.pdf', html2canvas: { scale: 2, backgroundColor: '#0b0e14' }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).save(); }
+
+        window.onload = () => { document.getElementById('tDate').value = new Date().toISOString().split('T')[0]; refresh(); };
+    </script>
+</body>
+</html>
